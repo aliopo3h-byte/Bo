@@ -2,7 +2,7 @@ import httpx
 import telebot
 
 # 1. ضع توكن البوت الخاص بك من BotFather هنا
-BOT_TOKEN = "8826605376:AAEqVw-OxHVxZZ8kBiqsU86KkerBCaFAUo0
+BOT_TOKEN = "8826605376:AAEqVw-OxHVxZZ8kBiqsU86KkerBCaFAUo0"
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # 2. ضع sessionid الخاص بحسابك الوهمي/الأساسي هنا
