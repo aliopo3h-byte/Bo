@@ -30,13 +30,16 @@ class InstagramUserInfo:
         try:
             response = self.client.get(url)
             if response.status_code != 200:
-                return f"❌ فشل الطلب: {response.status_code}\nتأكد من صلاحية الـ sessionid أو أن الحساب موجود."
+                return f"❌ فشل الطلب: {response.status_code}\nتأكد من صلاحية الـ sessionid أو أن الحساب موجود.", None
             
             data = response.json()
             if "data" not in data or data["data"]["user"] is None:
-                return "❌ الحساب غير موجود أو تم تقييد الطلب."
+                return "❌ الحساب غير موجود أو تم تقييد الطلب.", None
 
             user = data["data"]["user"]
+            
+            # جلب رابط الصورة الشخصية (عالية الدقة إن وجدت، وإلا العادية)
+            pic_url = user.get("profile_pic_url_hd") or user.get("profile_pic_url")
             
             # ترتيب البيانات في رسالة نصية ليتم إرسالها في تليجرام
             info = (
@@ -52,10 +55,10 @@ class InstagramUserInfo:
                 f"✅ **موثق:** {'نعم' if user.get('is_verified') else 'لا'}\n"
                 f"━━━━━━━━━━━━"
             )
-            return info
+            return info, pic_url
             
         except Exception as e:
-            return f"❌ حدث خطأ أثناء جلب البيانات: {e}"
+            return f"❌ حدث خطأ أثناء جلب البيانات: {e}", None
 
 # تهيئة كلاس الانستقرام
 ig_fetcher = InstagramUserInfo(SESSION_ID)
@@ -64,7 +67,7 @@ ig_fetcher = InstagramUserInfo(SESSION_ID)
 def send_welcome(message):
     welcome_text = (
         "مرحباً بك في بوت جلب معلومات انستقرام! 👋\n\n"
-        "فقط أرسل يوزر أي حساب (بدون علامة @) وسأقوم بجلب بياناته."
+        "فقط أرسل يوزر أي حساب (بدون علامة @) وسأقوم بجلب بياناته مع صورته الشخصية."
     )
     bot.reply_to(message, welcome_text)
 
@@ -74,18 +77,40 @@ def fetch_and_send_info(message):
     username = message.text.strip().replace("@", "")
     
     # إرسال رسالة انتظار للمستخدم
-    msg = bot.reply_to(message, "⏳ جاري جلب المعلومات، يرجى الانتظار...")
+    msg = bot.reply_to(message, "⏳ جاري جلب المعلومات والصورة، يرجى الانتظار...")
     
-    # جلب المعلومات من الكلاس
-    result_text = ig_fetcher.get_user_info(username)
+    # جلب المعلومات من الكلاس (النص + رابط الصورة)
+    result_text, pic_url = ig_fetcher.get_user_info(username)
     
-    # تعديل رسالة الانتظار وإرسال النتيجة النهائية
-    bot.edit_message_text(
-        chat_id=message.chat.id, 
-        message_id=msg.message_id, 
-        text=result_text, 
-        parse_mode="Markdown"
-    )
+    # حذف رسالة الانتظار
+    try:
+        bot.delete_message(chat_id=message.chat.id, message_id=msg.message_id)
+    except:
+        pass # تجاهل الخطأ لو لم يتمكن من حذف الرسالة لسبب ما
+    
+    # إرسال النتيجة (صورة + نص، أو نص فقط لو فشل جلب الصورة)
+    if pic_url:
+        try:
+            bot.send_photo(
+                chat_id=message.chat.id, 
+                photo=pic_url, 
+                caption=result_text, 
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            # في حال فشل إرسال الصورة (مثلاً الرابط غير صالح)، نرسل النص فقط كملاذ أخير
+            bot.send_message(
+                chat_id=message.chat.id, 
+                text=result_text + "\n\n*(ملاحظة: تعذر إرسال الصورة الشخصية)*", 
+                parse_mode="Markdown"
+            )
+    else:
+        # إذا لم يتم العثور على صورة أو حدث خطأ
+        bot.send_message(
+            chat_id=message.chat.id, 
+            text=result_text, 
+            parse_mode="Markdown"
+        )
 
 if __name__ == "__main__":
     print("✅ البوت يعمل الآن...")
