@@ -152,6 +152,35 @@ try:
     got = result_after(lambda: app.send(app.items[int(iid)], iid, "XXX"), timeout=2)
     check("refuses when helper covers field", got is None and any(m[0] == "showwarning" for m in msgs), repr(got))
 
+    # ---- فتح ملف أُرسل من نسخة ثانية (فتح باستخدام) يصل للنسخة العاملة
+    import shell_integration as si
+    xlsx2 = os.path.join(tmp, "قائمة ثانية.xlsx")
+    wb2 = openpyxl.Workbook()
+    wb2.active.append(["اسم المشترك"])
+    wb2.active.append(["كريم علي"])
+    wb2.save(xlsx2)
+    check("find_file_arg with arabic path", si.find_file_arg([xlsx2]) == os.path.abspath(xlsx2))
+    appmod.send_to_running_instance(xlsx2)
+    app.poll_requests()
+    check("forwarded file opened in running app", [i["name"] for i in app.items] == ["كريم علي"],
+          str([i["name"] for i in app.items]))
+    check("request file consumed", not os.path.exists(appmod.request_path()))
+
+    # ---- تسجيل (فتح باستخدام) في الريجستري ثم إزالته
+    cmd = '"C:\\Tools\\ActivatorHelper.exe" "%1"'
+    si.register_open_with("مساعد التفعيل", command=cmd)
+    check("registry command written", si.registered_command() == cmd, str(si.registered_command()))
+    import winreg
+    try:
+        winreg.CloseKey(winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                       r"Software\Classes\.xlsx\OpenWithList\ActivatorHelper.exe"))
+        ow = True
+    except OSError:
+        ow = False
+    check("xlsx OpenWithList entry", ow)
+    si.unregister_open_with()
+    check("registry cleaned", si.registered_command() is None)
+
     print("messages:", [m[0] for m in msgs])
 except Exception:
     traceback.print_exc()

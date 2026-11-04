@@ -10,6 +10,7 @@ import tkinter as tk
 import traceback
 from tkinter import filedialog, messagebox, ttk
 
+import shell_integration
 import winput
 from excel_reader import (BLUE, GREEN, LABELS, NONE, RED, YELLOW, ExcelError,
                           load_subscribers, normalize_ar, shorten_name)
@@ -67,12 +68,23 @@ def save_config(cfg):
         log.exception("save_config failed")
 
 
+def request_path():
+    return os.path.join(data_dir(), "open_request.txt")
+
+
+def send_to_running_instance(path):
+    tmp = request_path() + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(path)
+    os.replace(tmp, request_path())
+
+
 def done_key(it):
     return "%s|%s" % (it["name"], it["sub"])
 
 
 class App:
-    def __init__(self, root):
+    def __init__(self, root, initial_file=None):
         self.root = root
         self.cfg = load_config()
         self.items = []
@@ -96,10 +108,14 @@ class App:
         style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"))
 
         self.build_ui()
-        last = self.cfg.get("last_file")
-        if last and os.path.exists(last):
-            self.load(last, quiet=True)
+        if initial_file:
+            self.load(initial_file)
+        else:
+            last = self.cfg.get("last_file")
+            if last and os.path.exists(last):
+                self.load(last, quiet=True)
         self.root.after(2000, self.watch_file)
+        self.root.after(700, self.poll_requests)
 
     # ------------------------------------------------------------ واجهة
     def build_ui(self):
@@ -112,6 +128,8 @@ class App:
         self.pos_label = ttk.Label(top, text="")
         self.pos_label.pack(side="right", padx=6)
         ttk.Button(top, text="📄", width=3, command=self.open_log).pack(side="left", padx=3)
+        if winput.IS_WIN:
+            ttk.Button(top, text="🔗 فتح باستخدام", command=self.register_shell).pack(side="left", padx=3)
         self.update_pos_label()
 
         flt = ttk.Frame(root, padding=(6, 0))
@@ -223,6 +241,40 @@ class App:
         log.info("loaded %s rows=%d", path, len(items))
         self.refresh()
         return True
+
+    def register_shell(self):
+        exe = shell_integration.current_exe_path()
+        if any(s in exe.lower() for s in ("whatsapp", "\\temp\\", "/temp/")):
+            messagebox.showwarning(APP_TITLE, "البرنامج يعمل من مجلد مؤقت:\n%s\n\nانقل المجلد إلى سطح المكتب "
+                                              "أو أي مكان ثابت ثم أعد الضغط على الزر." % exe)
+            return
+        try:
+            shell_integration.register_open_with(APP_TITLE, icon=exe)
+        except Exception as e:
+            log.exception("register failed")
+            messagebox.showerror(APP_TITLE, "تعذر الربط:\n%s" % e)
+            return
+        messagebox.showinfo(APP_TITLE, "تم! الآن:\nزر الماوس الأيمن على أي ملف إكسل ← فتح باستخدام ← %s\n\n"
+                                       "(اختر «دائماً» إذا أردته الافتراضي لكل ملفات إكسل.)\n"
+                                       "أو اسحب الملف وأفلته على أيقونة البرنامج.\n\n"
+                                       "إذا نقلت البرنامج لمكان آخر أعد الضغط على هذا الزر." % APP_TITLE)
+
+    def poll_requests(self):
+        """استلام ملف أُرسل من نسخة ثانية للبرنامج (فتح ملف إكسل بينما البرنامج يعمل)."""
+        try:
+            p = request_path()
+            if os.path.exists(p):
+                with open(p, encoding="utf-8") as f:
+                    path = f.read().strip()
+                os.remove(p)
+                if path and os.path.isfile(path):
+                    self.load(path)
+                    self.root.deiconify()
+                    self.root.lift()
+                    self.set_status("📂 تم فتح: " + os.path.basename(path))
+        except Exception:
+            log.exception("poll_requests")
+        self.root.after(700, self.poll_requests)
 
     def watch_file(self):
         """إعادة تحميل الملف تلقائياً عند حفظه من إكسل."""
@@ -451,6 +503,7 @@ class App:
 
 def main():
     setup_logging()
+    file_arg = shell_integration.find_file_arg(sys.argv[1:])
     if winput.IS_WIN:
         try:  # دقة صحيحة لإحداثيات الماوس على الشاشات المكبّرة
             ctypes_ = __import__("ctypes")
@@ -458,12 +511,15 @@ def main():
         except Exception:
             pass
         if not winput.single_instance():
-            root = tk.Tk()
-            root.withdraw()
-            messagebox.showinfo(APP_TITLE, "البرنامج يعمل بالفعل.")
+            if file_arg:
+                send_to_running_instance(file_arg)  # النسخة العاملة ستفتح الملف
+            else:
+                root = tk.Tk()
+                root.withdraw()
+                messagebox.showinfo(APP_TITLE, "البرنامج يعمل بالفعل.")
             return
     root = tk.Tk()
-    App(root)
+    App(root, initial_file=file_arg)
     log.info("started v%s admin=%s", VERSION, winput.is_admin() if winput.IS_WIN else "-")
     root.mainloop()
 
