@@ -7,6 +7,7 @@ import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+import winput
 from excel_reader import BLUE, GREEN, LABELS, NONE, RED, YELLOW, load_subscribers
 
 APP_TITLE = "مساعد التفعيل"
@@ -86,6 +87,14 @@ class App:
         ttk.Label(opts, text="يُكتب في البحث:").pack(side="right")
         ttk.Radiobutton(opts, text="اسم المشترك", value="name", variable=self.send_var).pack(side="right", padx=3)
         ttk.Radiobutton(opts, text="اسم الاشتراك", value="sub", variable=self.send_var).pack(side="right", padx=3)
+        self.method_var = tk.StringVar(value=self.cfg.get("method", "type"))
+        opts2 = ttk.Frame(root, padding=(6, 2))
+        opts2.pack(fill="x")
+        ttk.Label(opts2, text="طريقة الإدخال:").pack(side="right")
+        ttk.Radiobutton(opts2, text="كتابة مباشرة", value="type", variable=self.method_var).pack(side="right", padx=3)
+        ttk.Radiobutton(opts2, text="لصق Ctrl+V", value="paste", variable=self.method_var).pack(side="right", padx=3)
+        if sys.platform == "win32" and not winput.is_admin():
+            ttk.Button(opts2, text="🛡 تشغيل كمسؤول", command=self.run_as_admin).pack(side="left", padx=3)
         self.enter_var = tk.BooleanVar(value=self.cfg.get("enter", True))
         ttk.Checkbutton(opts, text="ضغط Enter", variable=self.enter_var).pack(side="left", padx=3)
         self.top_var = tk.BooleanVar(value=self.cfg.get("topmost", True))
@@ -178,11 +187,6 @@ class App:
 
     # ------------------------------------------------------------------
     def calibrate(self):
-        try:
-            import pyautogui
-        except Exception as e:
-            messagebox.showerror(APP_TITLE, f"مكتبة pyautogui غير متوفرة:\n{e}")
-            return
         if not messagebox.askokcancel(
                 APP_TITLE,
                 "بعد الضغط على موافق: ضع مؤشر الماوس فوق حقل (بحث عن مشترك) في برنامج الاشتراكات "
@@ -192,11 +196,20 @@ class App:
             self.pos_label.config(text=f"ضع المؤشر على الحقل... {i}", foreground="blue")
             self.root.update()
             time.sleep(1)
-        x, y = pyautogui.position()
+        x, y = winput.get_cursor()
         self.cfg["pos"] = [int(x), int(y)]
         save_config(self.cfg)
         self.update_pos_label()
-        messagebox.showinfo(APP_TITLE, f"تم حفظ مكان الحقل: {x}, {y}")
+        msg = f"تم حفظ مكان الحقل: {x}, {y}"
+        if not winput.is_admin() and winput.window_is_elevated(x, y):
+            msg += ("\n\n⚠ برنامج الاشتراكات يعمل كمسؤول (Administrator)، وويندوز يمنع الكتابة فيه.\n"
+                    "اضغط زر (🛡 تشغيل كمسؤول).")
+        messagebox.showinfo(APP_TITLE, msg)
+
+    def run_as_admin(self):
+        self.on_close(save_only=True)
+        if winput.relaunch_as_admin():
+            self.root.destroy()
 
     def on_click(self, event=None):
         if event is not None and getattr(event, "y", None) is not None and event.type == tk.EventType.ButtonRelease:
@@ -209,7 +222,7 @@ class App:
         if not it:
             return
         text = it["sub"] if self.send_var.get() == "sub" and it["sub"] else it["name"]
-        self.send_to_search(text)
+        self.root.after(50, lambda: self.send_to_search(text))
         self.done.add(iid)
         self.refresh()
         if self.tree.exists(iid):
@@ -217,31 +230,46 @@ class App:
             self.tree.see(iid)
 
     def send_to_search(self, text):
-        # نسخ النص للحافظة (يدعم العربي)
-        self.root.clipboard_clear()
-        self.root.clipboard_append(text)
-        self.root.update()
+        if sys.platform != "win32":
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            return
+        winput.set_clipboard(text)
         pos = self.cfg.get("pos")
         if not pos:
             messagebox.showwarning(APP_TITLE, "تم نسخ الاسم فقط.\nاضغط (🎯 تحديد حقل البحث) أولاً "
                                               "حتى يكتب البرنامج الاسم تلقائياً.")
             return
+        if not winput.is_admin() and winput.window_is_elevated(*pos):
+            messagebox.showwarning(APP_TITLE, "برنامج الاشتراكات يعمل كمسؤول، وويندوز يمنع الكتابة فيه.\n"
+                                              "اضغط زر (🛡 تشغيل كمسؤول). الاسم منسوخ، الصقه بـ Ctrl+V.")
+            return
         try:
-            import pyautogui
-            pyautogui.FAILSAFE = False
-            old = pyautogui.position()
-            pyautogui.click(pos[0], pos[1])
-            time.sleep(0.15)
-            pyautogui.click(pos[0], pos[1])
+            old = winput.get_cursor()
+            winput.focus_window_at(*pos)
             time.sleep(0.1)
-            pyautogui.hotkey("ctrl", "a")
-            pyautogui.press("delete")
-            pyautogui.hotkey("ctrl", "v")
+            ok = winput.click(*pos)
+            time.sleep(0.2)
+            # مسح الحقل: Ctrl+A ثم End و Shift+Home احتياطاً
+            winput.hotkey(winput.VK_CONTROL, winput.VK_A)
+            winput.press(winput.VK_DELETE)
+            winput.press(winput.VK_END)
+            winput.hotkey(winput.VK_SHIFT, winput.VK_HOME)
+            winput.press(winput.VK_DELETE)
+            time.sleep(0.05)
+            if self.method_var.get() == "paste":
+                ok &= winput.hotkey(winput.VK_CONTROL, winput.VK_V)
+            else:
+                ok &= winput.type_unicode(text)
             if self.enter_var.get():
-                time.sleep(0.1)
-                pyautogui.press("enter")
-            pyautogui.moveTo(old[0], old[1])
-            self.status.config(text=f"تم إرسال: {text}")
+                time.sleep(0.15)
+                winput.press(winput.VK_RETURN)
+            time.sleep(0.05)
+            user32_pos = old
+            winput.user32.SetCursorPos(*user32_pos)
+            self.status.config(text=("تم إرسال: " if ok else "⚠ ويندوز رفض الإدخال: ") + text)
+            if not ok:
+                messagebox.showwarning(APP_TITLE, "ويندوز رفض إرسال الكتابة.\nجرّب زر (🛡 تشغيل كمسؤول).")
         except Exception as e:
             messagebox.showerror(APP_TITLE, f"تعذر الكتابة في البرنامج (الاسم منسوخ، الصقه بـ Ctrl+V):\n{e}")
 
@@ -256,11 +284,13 @@ class App:
         self.done.clear()
         self.refresh()
 
-    def on_close(self):
+    def on_close(self, save_only=False):
         self.cfg.update(filter=self.filter_var.get(), send=self.send_var.get(), enter=self.enter_var.get(),
+                        method=self.method_var.get(),
                         topmost=self.top_var.get(), geometry=self.root.geometry(), done=sorted(self.done))
         save_config(self.cfg)
-        self.root.destroy()
+        if not save_only:
+            self.root.destroy()
 
 
 def main():

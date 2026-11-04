@@ -22,7 +22,11 @@ jobs:
         run: pip install -r activator/requirements.txt
       - name: Smoke test
         working-directory: activator
-        run: python -c "import app, excel_reader, pyautogui, tkinter; print('ok')"
+        run: python -c "import app, excel_reader, winput, tkinter; assert winput.ctypes.sizeof(winput.INPUT) == 40; print('ok')"
+      - name: Input self-test (Arabic typing + paste)
+        working-directory: activator
+        continue-on-error: true
+        run: python selftest.py
       - name: Build
         working-directory: activator
         run: pyinstaller --noconfirm --onefile --windowed --name ActivatorHelper app.py
