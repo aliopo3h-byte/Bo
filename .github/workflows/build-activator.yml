@@ -27,25 +27,54 @@ jobs:
         run: python -m pytest -q tests
       - name: End-to-end test (real app + fake subscriptions window)
         run: python tests/e2e_windows.py
-      - name: Build EXE
-        run: pyinstaller --noconfirm --clean --onefile --windowed --name ActivatorHelper app.py
-      - name: Launch built EXE (must stay running)
+      - name: Build folder version (recommended, zipped)
+        run: pyinstaller --noconfirm --clean --onedir --windowed --name ActivatorHelper --distpath dist_dir --workpath build_dir app.py
+      - name: Build single-file EXE
+        run: pyinstaller --noconfirm --onefile --windowed --name ActivatorHelper app.py
+      - name: Launch both builds (must stay running)
         shell: pwsh
         run: |
-          $p = Start-Process dist\ActivatorHelper.exe -PassThru
-          Start-Sleep -Seconds 8
-          if ($p.HasExited) { Write-Error "EXE exited early with code $($p.ExitCode)"; exit 1 }
-          Stop-Process $p -Force
-          Write-Host "EXE started OK"
+          foreach ($exe in @("dist_dir\ActivatorHelper\ActivatorHelper.exe", "dist\ActivatorHelper.exe")) {
+            $p = Start-Process $exe -PassThru
+            Start-Sleep -Seconds 8
+            if ($p.HasExited) { Write-Error "$exe exited early with code $($p.ExitCode)"; exit 1 }
+            Stop-Process $p -Force
+            Write-Host "$exe started OK"
+          }
+      - name: Package + checksums
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist_dir\ActivatorHelper -DestinationPath ActivatorHelper.zip -Force
+          Copy-Item dist\ActivatorHelper.exe ActivatorHelper.exe
+          $z = (Get-FileHash ActivatorHelper.zip -Algorithm SHA256).Hash
+          $e = (Get-FileHash ActivatorHelper.exe -Algorithm SHA256).Hash
+          $zs = (Get-Item ActivatorHelper.zip).Length
+          $es = (Get-Item ActivatorHelper.exe).Length
+          @"
+          Build from commit ${{ github.sha }}
+
+          **Recommended:** download ``ActivatorHelper.zip``, extract it, run ``ActivatorHelper\ActivatorHelper.exe``.
+
+          | File | Size (bytes) | SHA-256 |
+          |---|---|---|
+          | ActivatorHelper.zip | $zs | ``$z`` |
+          | ActivatorHelper.exe | $es | ``$e`` |
+
+          Verify: ``certutil -hashfile ActivatorHelper.zip SHA256``
+          "@ | Out-File -Encoding utf8 ..\release_body.md
       - uses: actions/upload-artifact@v4
         with:
           name: ActivatorHelper
-          path: activator/dist/ActivatorHelper.exe
+          path: |
+            activator/ActivatorHelper.zip
+            activator/ActivatorHelper.exe
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: activator-latest
           name: ActivatorHelper (latest)
-          body: "Build from commit ${{ github.sha }}"
+          body_path: release_body.md
           prerelease: false
-          files: activator/dist/ActivatorHelper.exe
+          files: |
+            activator/ActivatorHelper.zip
+            activator/ActivatorHelper.exe
