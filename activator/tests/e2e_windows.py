@@ -178,6 +178,13 @@ try:
     except OSError:
         ow = False
     check("xlsx OpenWithList entry", ow)
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Classes\SystemFileAssociations\.xlsx\shell\ActivatorHelper\command") as k:
+            verb_ok = winreg.QueryValueEx(k, "")[0] == cmd
+    except OSError:
+        verb_ok = False
+    check("right-click menu verb for .xlsx", verb_ok)
     si.unregister_open_with()
     check("registry cleaned", si.registered_command() is None)
 

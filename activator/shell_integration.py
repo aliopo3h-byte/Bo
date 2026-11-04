@@ -70,6 +70,12 @@ def register_open_with(title, command=None, icon=None):
     for ext in EXTS:
         _set(BASE + r"\SupportedTypes", ext, "")
         _set(r"Software\Classes\%s\OpenWithList\%s" % (ext, APP_EXE), "", "")
+        # بند مباشر في قائمة الزر الأيمن لملفات إكسل
+        verb = r"Software\Classes\SystemFileAssociations\%s\shell\ActivatorHelper" % ext
+        _set(verb, "", "فتح في " + title)
+        if icon:
+            _set(verb, "Icon", icon)
+        _set(verb + r"\command", "", command)
     _notify()
 
 
@@ -77,6 +83,7 @@ def unregister_open_with():
     _del_tree(BASE)
     for ext in EXTS:
         _del_tree(r"Software\Classes\%s\OpenWithList\%s" % (ext, APP_EXE))
+        _del_tree(r"Software\Classes\SystemFileAssociations\%s\shell\ActivatorHelper" % ext)
     _notify()
 
 

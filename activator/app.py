@@ -15,7 +15,7 @@ import winput
 from excel_reader import (BLUE, GREEN, LABELS, NONE, RED, YELLOW, ExcelError,
                           load_subscribers, normalize_ar, shorten_name)
 
-VERSION = "1.2"
+VERSION = "1.3"
 APP_TITLE = "مساعد التفعيل"
 ROW_BG = {GREEN: "#C6EFCE", RED: "#FFC7CE", BLUE: "#BDD7EE", YELLOW: "#FFEB9C", NONE: "#FFFFFF"}
 DONE_BG = "#D9D9D9"
@@ -254,10 +254,10 @@ class App:
             log.exception("register failed")
             messagebox.showerror(APP_TITLE, "تعذر الربط:\n%s" % e)
             return
-        messagebox.showinfo(APP_TITLE, "تم! الآن:\nزر الماوس الأيمن على أي ملف إكسل ← فتح باستخدام ← %s\n\n"
+        messagebox.showinfo(APP_TITLE, "تم! الآن:\nزر الماوس الأيمن على أي ملف إكسل ← فتح في %s\n(أو: فتح باستخدام ← %s)\n\n"
                                        "(اختر «دائماً» إذا أردته الافتراضي لكل ملفات إكسل.)\n"
                                        "أو اسحب الملف وأفلته على أيقونة البرنامج.\n\n"
-                                       "إذا نقلت البرنامج لمكان آخر أعد الضغط على هذا الزر." % APP_TITLE)
+                                       "إذا نقلت البرنامج لمكان آخر أعد الضغط على هذا الزر." % (APP_TITLE, APP_TITLE))
 
     def poll_requests(self):
         """استلام ملف أُرسل من نسخة ثانية للبرنامج (فتح ملف إكسل بينما البرنامج يعمل)."""
